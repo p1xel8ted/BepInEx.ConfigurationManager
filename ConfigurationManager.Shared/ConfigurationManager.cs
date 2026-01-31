@@ -131,7 +131,7 @@ namespace ConfigurationManager
             _pluginConfigCollapsedDefault = Config.Bind("General", "Plugin collapsed default", true, new ConfigDescription("If set to true plugins will be collapsed when opening the configuration manager window"));
             _categorySortAlphabetical = Config.Bind("General", "Sort categories alphabetically", true, new ConfigDescription("If true, categories are sorted alphabetically. If false, categories are sorted by registration order."));
             _categorySortAlphabetical.SettingChanged += (sender, args) => BuildSettingList();
-            _windowOpaqueWhenUnfocused = Config.Bind("General", "Opaque window when unfocused", false, new ConfigDescription("If true, the window background stays opaque even when moved/unfocused. If false, the background becomes transparent."));
+            _windowOpaqueWhenUnfocused = Config.Bind("General", "Opaque window background", true, new ConfigDescription("If true, draws a solid background behind the window for better visibility."));
         }
 
 #if IL2CPP
@@ -313,7 +313,7 @@ namespace ConfigurationManager
 
         private void CalculateWindowRect()
         {
-            var width = Mathf.Min(Screen.width, 650);
+            var width = Mathf.Min(Screen.width, 700);
             var height = Screen.height < 560 ? Screen.height : Screen.height - 100;
             var offsetX = Mathf.RoundToInt((Screen.width - width) / 2f);
             var offsetY = Mathf.RoundToInt((Screen.height - height) / 2f);
@@ -354,17 +354,16 @@ namespace ConfigurationManager
 #endif
                 mousePosition.y = Screen.height - mousePosition.y;
 
-                // If the window hasn't been moved by the user yet, block the whole screen and use a solid background to make the window easier to see
+                // If the window hasn't been moved by the user yet, block the whole screen so clicking outside closes it
                 if (!_windowWasMoved)
                 {
                     if (GUI.Button(_screenRect, string.Empty, GUI.skin.box) && !SettingWindowRect.Contains(mousePosition))
                         DisplayingWindow = false;
-
-                    ImguiUtils.DrawWindowBackground(SettingWindowRect);
                 }
-                else if (_windowOpaqueWhenUnfocused.Value)
+
+                // Draw opaque background based on setting
+                if (_windowOpaqueWhenUnfocused.Value)
                 {
-                    // Draw opaque background even when window is moved/unfocused
                     ImguiUtils.DrawWindowBackground(SettingWindowRect);
                 }
 
