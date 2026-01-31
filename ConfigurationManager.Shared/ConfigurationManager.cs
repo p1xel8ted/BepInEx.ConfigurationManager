@@ -361,8 +361,8 @@ namespace ConfigurationManager
                         DisplayingWindow = false;
                 }
 
-                // Draw opaque background when focused, or when unfocused if setting enabled
-                if (!_windowWasMoved || _windowOpaqueWhenUnfocused.Value)
+                // Draw solid background when focused, or when unfocused if setting disabled
+                if (SettingWindowRect.Contains(mousePosition) || !_windowOpaqueWhenUnfocused.Value)
                 {
                     ImguiUtils.DrawWindowBackground(SettingWindowRect);
                 }
