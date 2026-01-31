@@ -131,7 +131,7 @@ namespace ConfigurationManager
             _pluginConfigCollapsedDefault = Config.Bind("General", "Plugin collapsed default", true, new ConfigDescription("If set to true plugins will be collapsed when opening the configuration manager window"));
             _categorySortAlphabetical = Config.Bind("General", "Sort categories alphabetically", true, new ConfigDescription("If true, categories are sorted alphabetically. If false, categories are sorted by registration order."));
             _categorySortAlphabetical.SettingChanged += (sender, args) => BuildSettingList();
-            _windowOpaqueWhenUnfocused = Config.Bind("General", "Opaque window background", true, new ConfigDescription("If true, draws a solid background behind the window for better visibility."));
+            _windowOpaqueWhenUnfocused = Config.Bind("General", "Opaque when unfocused", false, new ConfigDescription("If true, keeps solid background when window is unfocused. If false, background becomes transparent when unfocused."));
         }
 
 #if IL2CPP
@@ -361,8 +361,8 @@ namespace ConfigurationManager
                         DisplayingWindow = false;
                 }
 
-                // Draw opaque background based on setting
-                if (_windowOpaqueWhenUnfocused.Value)
+                // Draw opaque background when focused, or when unfocused if setting enabled
+                if (!_windowWasMoved || _windowOpaqueWhenUnfocused.Value)
                 {
                     ImguiUtils.DrawWindowBackground(SettingWindowRect);
                 }
