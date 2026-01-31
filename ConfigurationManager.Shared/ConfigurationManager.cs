@@ -26,21 +26,29 @@ namespace ConfigurationManager
     /// An easy way to let user configure how a plugin behaves without the need to make your own GUI. The user can change any of the settings you expose, even keyboard shortcuts.
     /// https://github.com/ManlyMarco/BepInEx.ConfigurationManager
     /// </summary>
-    [BepInPlugin(GUID, "Configuration Manager", Constants.Version)]
-    [Browsable(false)]
+    [BepInPlugin(GUID, "Configuration Manager Enhanced", Constants.Version)]
     public class ConfigurationManager : BaseUnityPlugin
     {
         /// <summary>
         /// GUID of this plugin
         /// </summary>
-        public const string GUID = "com.bepis.bepinex.configurationmanager";
+        public const string GUID = "com.p1xel8ted.configurationmanagerenhanced";
 
         /// <summary>
         /// Version constant
         /// </summary>
         public const string Version = Constants.Version;
 
+        /// <summary>
+        /// Singleton instance of the ConfigurationManager. Use this to access the manager from other plugins.
+        /// </summary>
+        public static ConfigurationManager Instance { get; private set; }
+
+#if IL2CPP
         internal static ManualLogSource Logger;
+#else
+        internal new static ManualLogSource Logger;
+#endif
         private static SettingFieldDrawer _fieldDrawer;
 
         private static readonly Color _advancedSettingColor = new Color(1f, 0.95f, 0.67f, 1f);
@@ -96,11 +104,20 @@ namespace ConfigurationManager
         private readonly ConfigEntry<KeyboardShortcut> _keybind;
         private readonly ConfigEntry<bool> _hideSingleSection;
         private readonly ConfigEntry<bool> _pluginConfigCollapsedDefault;
+        private readonly ConfigEntry<bool> _categorySortAlphabetical;
+        private readonly ConfigEntry<bool> _windowOpaqueWhenUnfocused;
         private bool _showDebug;
+        private bool _showOnlyChanged;
+        private Vector2 _savedScrollPosition;
+        private bool _isResizing;
+        private const int ResizeHandleSize = 20;
+        private const int MinWindowWidth = 400;
+        private const int MinWindowHeight = 300;
 
         /// <inheritdoc />
         public ConfigurationManager()
         {
+            Instance = this;
 #if IL2CPP
             Logger = Log;
 #else
@@ -116,6 +133,9 @@ namespace ConfigurationManager
                                       "The key can be overridden by a game-specific plugin if necessary, in that case this setting is ignored."));
             _hideSingleSection = Config.Bind("General", "Hide single sections", false, new ConfigDescription("Show section title for plugins with only one section"));
             _pluginConfigCollapsedDefault = Config.Bind("General", "Plugin collapsed default", true, new ConfigDescription("If set to true plugins will be collapsed when opening the configuration manager window"));
+            _categorySortAlphabetical = Config.Bind("General", "Sort categories alphabetically", true, new ConfigDescription("If true, categories are sorted alphabetically. If false, categories are sorted by registration order."));
+            _categorySortAlphabetical.SettingChanged += (sender, args) => BuildSettingList();
+            _windowOpaqueWhenUnfocused = Config.Bind("General", "Opaque window when unfocused", false, new ConfigDescription("If true, the window background stays opaque even when moved/unfocused. If false, the background becomes transparent."));
         }
 
 #if IL2CPP
@@ -155,6 +175,7 @@ namespace ConfigurationManager
                     BuildSettingList();
 
                     _focusSearchBox = true;
+                    _settingWindowScrollPos = _savedScrollPosition;
 
                     // Do through reflection for unity 4 compat
                     if (_curLockState != null)
@@ -165,6 +186,8 @@ namespace ConfigurationManager
                 }
                 else
                 {
+                    _savedScrollPosition = _settingWindowScrollPos;
+
                     if (!_previousCursorVisible || _previousCursorLockState != 0) // 0 = CursorLockMode.None
                         SetUnlockCursor(_previousCursorLockState, _previousCursorVisible);
                 }
@@ -221,7 +244,8 @@ namespace ConfigurationManager
                     results = results.Where(x => x.IsAdvanced == true || IsKeyboardShortcut(x));
             }
 
-            const string shortcutsCatName = "Keyboard shortcuts";
+            if (_showOnlyChanged)
+                results = results.Where(x => x.DefaultValue != null && !Equals(x.Get(), x.DefaultValue));
 
             var settingsAreCollapsed = _pluginConfigCollapsedDefault.Value;
 
@@ -238,12 +262,25 @@ namespace ConfigurationManager
                 .GroupBy(x => x.PluginInfo)
                 .Select(pluginSettings =>
                 {
-                    var originalCategoryOrder = pluginSettings.Select(x => x.Category).Distinct().ToList();
+                    var groupedCategories = pluginSettings.GroupBy(x => x.Category);
 
-                    var categories = pluginSettings
-                        .GroupBy(x => x.Category)
-                        .OrderBy(x => originalCategoryOrder.IndexOf(x.Key))
-                        .ThenBy(x => x.Key)
+                    IOrderedEnumerable<IGrouping<string, SettingEntryBase>> orderedCategories;
+                    if (_categorySortAlphabetical.Value)
+                    {
+                        orderedCategories = groupedCategories
+                            .OrderBy(x => x.Min(s => s.CategoryOrder))
+                            .ThenBy(x => x.Key);
+                    }
+                    else
+                    {
+                        var originalCategoryOrder = pluginSettings.Select(x => x.Category).Distinct().ToList();
+                        orderedCategories = groupedCategories
+                            .OrderBy(x => x.Min(s => s.CategoryOrder))
+                            .ThenBy(x => originalCategoryOrder.IndexOf(x.Key))
+                            .ThenBy(x => x.Key);
+                    }
+
+                    var categories = orderedCategories
                         .Select(x => new PluginSettingsData.PluginSettingsGroupData { Name = x.Key, Settings = x.OrderByDescending(set => set.Order).ThenBy(set => set.DispName).ToList() });
 
                     var website = Utils.GetWebsite(pluginSettings.First().PluginInstance);
@@ -296,6 +333,20 @@ namespace ConfigurationManager
 
         private void OnGUI()
         {
+            // Handle hotkey during Layout phase to avoid Input.ResetInputAxes() interference
+            // Layout happens first before any GUI controls can consume input
+            if (!OverrideHotkey && Event.current.type == EventType.Layout && _keybind.Value.IsDown())
+            {
+                DisplayingWindow = !DisplayingWindow;
+            }
+
+            // Escape key closes the window
+            if (DisplayingWindow && Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.Escape)
+            {
+                DisplayingWindow = false;
+                Event.current.Use();
+            }
+
             if (DisplayingWindow)
             {
                 SetUnlockCursor(0, true);
@@ -315,8 +366,13 @@ namespace ConfigurationManager
 
                     ImguiUtils.DrawWindowBackground(SettingWindowRect);
                 }
+                else if (_windowOpaqueWhenUnfocused.Value)
+                {
+                    // Draw opaque background even when window is moved/unfocused
+                    ImguiUtils.DrawWindowBackground(SettingWindowRect);
+                }
 
-                var newRect = GUILayout.Window(WindowId, SettingWindowRect, (GUI.WindowFunction)SettingsWindow, "Plugin / mod settings");
+                var newRect = GUILayout.Window(WindowId, SettingWindowRect, (GUI.WindowFunction)SettingsWindow, "Configuration Manager Enhanced");
 
                 if (newRect != SettingWindowRect)
                 {
@@ -440,7 +496,42 @@ namespace ConfigurationManager
             if (!SettingFieldDrawer.DrawCurrentDropdown())
                 DrawTooltip(SettingWindowRect);
 
-            GUI.DragWindow();
+            // Draw resize handle
+            var resizeHandleRect = new Rect(
+                SettingWindowRect.width - ResizeHandleSize,
+                SettingWindowRect.height - ResizeHandleSize,
+                ResizeHandleSize,
+                ResizeHandleSize);
+
+            GUI.Box(resizeHandleRect, "◢");
+
+            // Handle resize drag
+            if (Event.current.type == EventType.MouseDown && resizeHandleRect.Contains(Event.current.mousePosition))
+            {
+                _isResizing = true;
+                Event.current.Use();
+            }
+
+            if (_isResizing)
+            {
+                if (Event.current.type == EventType.MouseDrag)
+                {
+                    var newWidth = Mathf.Max(MinWindowWidth, Event.current.mousePosition.x + 5);
+                    var newHeight = Mathf.Max(MinWindowHeight, Event.current.mousePosition.y + 5);
+                    SettingWindowRect = new Rect(SettingWindowRect.x, SettingWindowRect.y, newWidth, newHeight);
+                    LeftColumnWidth = Mathf.RoundToInt(SettingWindowRect.width / 2.5f);
+                    RightColumnWidth = (int)SettingWindowRect.width - LeftColumnWidth - 115;
+                    Event.current.Use();
+                }
+                else if (Event.current.type == EventType.MouseUp)
+                {
+                    _isResizing = false;
+                    Event.current.Use();
+                }
+            }
+
+            if (!_isResizing)
+                GUI.DragWindow();
         }
 
         private void DrawTips()
@@ -499,6 +590,13 @@ namespace ConfigurationManager
                     BuildSettingList();
                 }
 
+                newVal = GUILayout.Toggle(_showOnlyChanged, "Only changed");
+                if (_showOnlyChanged != newVal)
+                {
+                    _showOnlyChanged = newVal;
+                    BuildFilteredSettingList();
+                }
+
                 if (GUILayout.Button("Open Log"))
                 {
                     try { Utils.OpenLog(); }
@@ -542,6 +640,18 @@ namespace ConfigurationManager
 
                     _tipsPluginHeaderWasClicked = true;
                 }
+
+                GUILayout.Space(8);
+
+                if (GUILayout.Button("Export", GUILayout.ExpandWidth(false)))
+                {
+                    ExportSettings();
+                }
+
+                if (GUILayout.Button("Import", GUILayout.ExpandWidth(false)))
+                {
+                    ImportSettings();
+                }
             }
             GUILayout.EndHorizontal();
         }
@@ -577,12 +687,12 @@ namespace ConfigurationManager
             var isSearching = !string.IsNullOrEmpty(SearchString);
 
             {
+                GUILayout.BeginHorizontal();
+
                 var hasWebsite = plugin.Website != null;
                 if (hasWebsite)
-                {
-                    GUILayout.BeginHorizontal();
                     GUILayout.Space(29); // Same as the URL button to keep the plugin name centered
-                }
+                GUILayout.Space(40); // Space for Reset button
 
                 if (SettingFieldDrawer.DrawPluginHeader(categoryHeader, plugin.Collapsed && !isSearching) && !isSearching)
                 {
@@ -597,8 +707,17 @@ namespace ConfigurationManager
                     if (GUILayout.Button(new GUIContent("URL", null, plugin.Website), GUI.skin.label, GUILayout.ExpandWidth(false)))
                         Utils.OpenWebsite(plugin.Website);
                     GUI.color = origColor;
-                    GUILayout.EndHorizontal();
                 }
+
+                if (GUILayout.Button(new GUIContent("Reset", null, "Reset all settings for this plugin to their default values"), GUILayout.ExpandWidth(false)))
+                {
+                    foreach (var category in plugin.Categories)
+                        foreach (var setting in category.Settings)
+                            if (setting.DefaultValue != null)
+                                setting.Set(setting.DefaultValue);
+                }
+
+                GUILayout.EndHorizontal();
             }
 
             if (isSearching || !plugin.Collapsed)
@@ -695,7 +814,9 @@ namespace ConfigurationManager
 
             if (OverrideHotkey) return;
 
-            if (_keybind.Value.IsDown()) DisplayingWindow = !DisplayingWindow;
+            // Only check keybind in Update when window is closed; OnGUI handles it when open
+            // This avoids issues with Input.ResetInputAxes() interfering with input detection
+            if (!DisplayingWindow && _keybind.Value.IsDown()) DisplayingWindow = true;
         }
 
         private void LateUpdate()
@@ -716,6 +837,95 @@ namespace ConfigurationManager
                     _curLockState.SetValue(null, lockState, null);
 
                 _curVisible.SetValue(null, cursorVisible, null);
+            }
+        }
+
+        private void ExportSettings()
+        {
+            try
+            {
+                var exportPath = Path.Combine(Paths.ConfigPath, "ConfigManagerExport.txt");
+                using (var writer = new StreamWriter(exportPath))
+                {
+                    foreach (var plugin in _filteredSetings)
+                    {
+                        foreach (var category in plugin.Categories)
+                        {
+                            foreach (var setting in category.Settings)
+                            {
+                                var value = setting.Get();
+                                if (value != null)
+                                    writer.WriteLine($"{plugin.Info.GUID}|{setting.Category}|{setting.DispName}|{value}");
+                            }
+                        }
+                    }
+                }
+                Logger.Log(LogLevel.Message, $"Settings exported to {exportPath}");
+            }
+            catch (Exception ex)
+            {
+                Logger.Log(LogLevel.Error, $"Failed to export settings: {ex.Message}");
+            }
+        }
+
+        private void ImportSettings()
+        {
+            try
+            {
+                var importPath = Path.Combine(Paths.ConfigPath, "ConfigManagerExport.txt");
+                if (!File.Exists(importPath))
+                {
+                    Logger.Log(LogLevel.Warning, $"Import file not found: {importPath}");
+                    return;
+                }
+
+                var lines = File.ReadAllLines(importPath);
+                var imported = 0;
+
+                foreach (var line in lines)
+                {
+                    if (string.IsNullOrEmpty(line) || line.Trim().Length == 0) continue;
+
+                    var parts = line.Split(new[] { '|' }, 4);
+                    if (parts.Length < 4) continue;
+
+                    var guid = parts[0];
+                    var category = parts[1];
+                    var name = parts[2];
+                    var valueStr = parts[3];
+
+                    foreach (var plugin in _filteredSetings)
+                    {
+                        if (plugin.Info.GUID != guid) continue;
+
+                        foreach (var cat in plugin.Categories)
+                        {
+                            foreach (var setting in cat.Settings)
+                            {
+                                if (setting.Category == category && setting.DispName == name)
+                                {
+                                    try
+                                    {
+                                        var converter = TomlTypeConverter.GetConverter(setting.SettingType);
+                                        if (converter != null)
+                                        {
+                                            setting.Set(converter.ConvertToObject(valueStr, setting.SettingType));
+                                            imported++;
+                                        }
+                                    }
+                                    catch { /* Skip settings that can't be converted */ }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Logger.Log(LogLevel.Message, $"Imported {imported} settings from {importPath}");
+                BuildSettingList();
+            }
+            catch (Exception ex)
+            {
+                Logger.Log(LogLevel.Error, $"Failed to import settings: {ex.Message}");
             }
         }
 

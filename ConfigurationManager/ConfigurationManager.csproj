@@ -4,7 +4,7 @@
     <TargetFramework>net35</TargetFramework>
 
     <RootNamespace>ConfigurationManager</RootNamespace>
-    <AssemblyName>ConfigurationManager</AssemblyName>
+    <AssemblyName>ConfigurationManagerEnhanced</AssemblyName>
 
     <OutputPath>..\bin\BepInEx5</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
@@ -42,10 +42,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="BepInEx.Analyzers" Version="1.0.8">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
     <PackageReference Include="BepInEx.BaseLib" Version="5.4.21">
       <IncludeAssets>compile</IncludeAssets>
     </PackageReference>
@@ -57,11 +53,6 @@
       <IncludeAssets>compile</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-  </ItemGroup>
-
-  <ItemGroup>
-    <Analyzer Include="..\packages\BepInEx.Analyzers.1.0.8\analyzers\dotnet\cs\BepInEx.Analyzers.CodeFixes.dll" />
-    <Analyzer Include="..\packages\BepInEx.Analyzers.1.0.8\analyzers\dotnet\cs\BepInEx.Analyzers.dll" />
   </ItemGroup>
 
   <Import Project="..\ConfigurationManager.Shared\ConfigurationManager.Shared.projitems" Label="Shared" />

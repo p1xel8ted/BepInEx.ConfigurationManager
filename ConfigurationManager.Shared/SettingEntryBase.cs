@@ -120,6 +120,11 @@ namespace ConfigurationManager
         public int Order { get; protected set; }
 
         /// <summary>
+        /// Order of the category relative to other categories. 0 by default.
+        /// </summary>
+        public int CategoryOrder { get; protected set; }
+
+        /// <summary>
         /// Get the value of this setting
         /// </summary>
         public abstract object Get();

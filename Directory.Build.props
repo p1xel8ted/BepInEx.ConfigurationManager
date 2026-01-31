@@ -1,10 +1,10 @@
 <Project>
 	<PropertyGroup>
 		<!-- This is the master version, only change this one -->
-		<Version>18.4.1</Version>
+		<Version>1.0.0</Version>
 
 		<!-- Sets the 'Product name' field on the dll file -->
-		<Product>BepInEx.ConfigurationManager</Product>
+		<Product>BepInEx.ConfigurationManagerEnhanced</Product>
 		<!-- Sets the 'File description' field on the dll file -->
 		<AssemblyTitle>Universal in-game configuration manager for BepInEx plugins</AssemblyTitle>
 		<!-- Sets the 'Company' field on the dll file -->
@@ -22,7 +22,7 @@
 	</PropertyGroup>
 
 	<!-- Create a release zip file (after successful Release build) -->
-	<Target Name="CreateReleaseZip" AfterTargets="Build" Condition="'$(Configuration)' == 'Release' And '$(AssemblyName)' == 'ConfigurationManager'">
+	<Target Name="CreateReleaseZip" AfterTargets="Build" Condition="'$(Configuration)' == 'Release' And '$(AssemblyName)' == 'ConfigurationManagerEnhanced'">
 		<PropertyGroup>
 			<CopyDir>$(OutputPath)\..\TEMP_COPY_$(AssemblyName)</CopyDir>
 		</PropertyGroup>
@@ -31,9 +31,9 @@
 		</ItemGroup>
 
 		<RemoveDir Directories="$(CopyDir)" />
-		<Copy DestinationFolder="$(CopyDir)\BepInEx\plugins\ConfigurationManager" SourceFiles="@(BuildFiles)" />
+		<Copy DestinationFolder="$(CopyDir)\BepInEx\plugins\ConfigurationManagerEnhanced" SourceFiles="@(BuildFiles)" />
 		<!-- https://learn.microsoft.com/en-us/visualstudio/msbuild/zipdirectory-task?view=vs-2022 -->
-		<ZipDirectory SourceDirectory="$(CopyDir)" DestinationFile="$(OutputPath)\..\BepInEx.ConfigurationManager$(ZipPostfix)_v$(Version).zip" Overwrite="true" />
+		<ZipDirectory SourceDirectory="$(CopyDir)" DestinationFile="$(OutputPath)\..\BepInEx.ConfigurationManagerEnhanced$(ZipPostfix)_v$(Version).zip" Overwrite="true" />
 		<RemoveDir Directories="$(CopyDir)" />
 	</Target>
 
