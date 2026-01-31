@@ -110,7 +110,9 @@ namespace ConfigurationManager
         private bool _showOnlyChanged;
         private Vector2 _savedScrollPosition;
         private bool _isResizing;
+        private Vector2 _resizeStartOffset;
         private const int ResizeHandleSize = 20;
+        private const int ResizeHandleHitboxSize = 40;
         private const int MinWindowWidth = 400;
         private const int MinWindowHeight = 300;
 
@@ -496,19 +498,31 @@ namespace ConfigurationManager
             if (!SettingFieldDrawer.DrawCurrentDropdown())
                 DrawTooltip(SettingWindowRect);
 
-            // Draw resize handle
-            var resizeHandleRect = new Rect(
+            // Draw resize handle - visual indicator (smaller, in corner)
+            var resizeVisualRect = new Rect(
                 SettingWindowRect.width - ResizeHandleSize,
                 SettingWindowRect.height - ResizeHandleSize,
                 ResizeHandleSize,
                 ResizeHandleSize);
 
-            GUI.Box(resizeHandleRect, "◢");
+            GUI.Box(resizeVisualRect, "◢");
 
-            // Handle resize drag
-            if (Event.current.type == EventType.MouseDown && resizeHandleRect.Contains(Event.current.mousePosition))
+            // Hitbox for resize - larger invisible area for easier grabbing
+            var resizeHitboxRect = new Rect(
+                SettingWindowRect.width - ResizeHandleHitboxSize,
+                SettingWindowRect.height - ResizeHandleHitboxSize,
+                ResizeHandleHitboxSize,
+                ResizeHandleHitboxSize);
+
+            // Handle resize drag start
+            if (Event.current.type == EventType.MouseDown && resizeHitboxRect.Contains(Event.current.mousePosition))
             {
                 _isResizing = true;
+                _windowWasMoved = true;
+                // Store offset from mouse position to window's bottom-right corner
+                _resizeStartOffset = new Vector2(
+                    SettingWindowRect.width - Event.current.mousePosition.x,
+                    SettingWindowRect.height - Event.current.mousePosition.y);
                 Event.current.Use();
             }
 
@@ -516,8 +530,9 @@ namespace ConfigurationManager
             {
                 if (Event.current.type == EventType.MouseDrag)
                 {
-                    var newWidth = Mathf.Max(MinWindowWidth, Event.current.mousePosition.x + 5);
-                    var newHeight = Mathf.Max(MinWindowHeight, Event.current.mousePosition.y + 5);
+                    // Calculate new dimensions using the stored offset
+                    var newWidth = Mathf.Max(MinWindowWidth, Event.current.mousePosition.x + _resizeStartOffset.x);
+                    var newHeight = Mathf.Max(MinWindowHeight, Event.current.mousePosition.y + _resizeStartOffset.y);
                     SettingWindowRect = new Rect(SettingWindowRect.x, SettingWindowRect.y, newWidth, newHeight);
                     LeftColumnWidth = Mathf.RoundToInt(SettingWindowRect.width / 2.5f);
                     RightColumnWidth = (int)SettingWindowRect.width - LeftColumnWidth - 115;
